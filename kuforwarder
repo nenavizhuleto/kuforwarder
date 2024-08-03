@@ -39,6 +39,11 @@ clear
 
 NS=$(kubectl get ns $CTL_OPT_G | fzf --header 'Select namespace' $FZF_OPT_G | awk '{print $1}')
 
+if [ -z "$NS" ]; then
+	echo "Namespace not selected"
+	exit
+fi
+
 echo "Selected namespace: $NS"
 
 SVCS=$(kubectl get svc -n $NS $CTL_OPT_G)
@@ -51,6 +56,11 @@ SVC=$(echo -e "$SVCS" 										\
 	| awk '{print $1}' 									\
 )
 
+if [ -z "$SVC" ]; then
+	echo "Service not selected"
+	exit
+fi
+
 echo "Selected service: $SVC"
 
 SVC_PORTS=$(kubectl describe svc $SVC -n $NS 			\
@@ -58,6 +68,11 @@ SVC_PORTS=$(kubectl describe svc $SVC -n $NS 			\
 	| grep -Eo '[0-9]+'					\
 	| fzf --multi --header 'Select internal port' $FZF_OPT_G	\
 )
+
+if [ -z "${SVC_PORTS}" ]; then
+	echo "Ports not selected"
+	exit
+fi
 
 echo -e "Selected ports: \n$SVC_PORTS"
 
