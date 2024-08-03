@@ -1,0 +1,86 @@
+#!/usr/bin/bash
+#---------------------------------------------
+#
+#	kuforward
+#
+#	Utility script to easily find and forward kube's service ports
+#
+#	Copyright 2024, Nenavizhu Leto <nenavizhu.leto@gmail.com>
+#
+#	LICENSE:
+#	
+#	Permission is hereby granted, free of charge, to any person obtaining a copy
+# 	of this software and associated documentation files (the "Software"), to deal
+# 	in the Software without restriction, including without limitation the rights
+# 	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# 	copies of the Software, and to permit persons to whom the Software is
+# 	furnished to do so, subject to the following conditions:
+#
+# 	The above copyright notice and this permission notice shall be included in all
+# 	copies or substantial portions of the Software.
+#
+# 	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# 	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# 	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# 	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# 	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# 	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# 	SOFTWARE.
+#
+#---------------------------------------------
+
+# uncomment for debug
+# set -x
+
+CTL_OPT_G='--no-headers=true'
+FZF_OPT_G='--reverse --height 80%'
+
+clear
+
+NS=$(kubectl get ns $CTL_OPT_G | fzf --header 'Select namespace' $FZF_OPT_G | awk '{print $1}')
+
+echo "Selected namespace: $NS"
+
+SVCS=$(kubectl get svc -n $NS $CTL_OPT_G)
+
+echo -e "Available services: \n$SVCS"
+
+SVC=$(echo -e "$SVCS" 										\
+	| fzf --header 'Select service' $FZF_OPT_G 						\
+	--preview "kubectl describe svc {1} -n $NS | grep -E '^|TargetPort.*' --color='always'" \
+	| awk '{print $1}' 									\
+)
+
+echo "Selected service: $SVC"
+
+SVC_PORTS=$(kubectl describe svc $SVC -n $NS 			\
+	| grep "TargetPort"					\
+	| grep -Eo '[0-9]+'					\
+	| fzf --multi --header 'Select internal port' $FZF_OPT_G	\
+)
+
+echo -e "Selected ports: \n$SVC_PORTS"
+
+unset PROCESSES
+
+for PORT in $SVC_PORTS
+do
+	read -p "Provide local port for $PORT: " FWD_PORT
+	kubectl port-forward service/$SVC $FWD_PORT:$PORT -n $NS & 
+	PID=$!
+	kill -TSTP $PID
+	PROCESSES+=( $PID )
+done
+
+clear
+
+echo -e "Namespace: $NS\nService: $SVC\n"
+
+for PROCESS in "${PROCESSES[@]}"
+do
+	kill -CONT $PROCESS
+done
+
+echo -e "CTRL-C to stop forwarding.\n"
+
+wait "${PROCESSES[@]}"
